@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comunicados Internos</title>
+<style>
+  * { box-sizing: border-box; font-family: Arial, sans-serif; }
+  body { margin: 0; background: #eef1f5; color: #222; }
+  header { background: #1f3a5f; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 18px; margin: 0; }
+  button { cursor: pointer; border: 0; border-radius: 6px; padding: 8px 14px; background: #2f6fdb; color: #fff; font-size: 14px; }
+  button.sec { background: #6b7a90; }
+  button.red { background: #c9372c; }
+  input, select, textarea { width: 100%; padding: 8px; margin: 4px 0 10px; border: 1px solid #bbb; border-radius: 6px; font-size: 14px; }
+  #login { max-width: 320px; margin: 90px auto; background: #fff; padding: 24px; border-radius: 10px; box-shadow: 0 2px 10px #0002; }
+  #app { display: none; }
+  .barra { padding: 12px 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .quadro { display: flex; gap: 14px; padding: 0 20px 20px; overflow-x: auto; align-items: flex-start; }
+  .coluna { min-width: 270px; width: 270px; background: #dde3ec; border-radius: 10px; padding: 10px; }
+  .coluna.meu { background: #cfe3ff; outline: 3px solid #2f6fdb; }
+  .coluna h2 { font-size: 15px; margin: 0 0 10px; display: flex; justify-content: space-between; }
+  .cartao { background: #fff; border-radius: 8px; padding: 10px; margin-bottom: 10px; box-shadow: 0 1px 3px #0003; border-left: 5px solid #2f6fdb; }
+  .cartao.Em { border-left-color: #e0a100; }
+  .cartao.Concluído { border-left-color: #2e9e4f; opacity: .75; }
+  .cartao h3 { margin: 0 0 6px; font-size: 15px; }
+  .cartao p { margin: 0 0 8px; font-size: 14px; white-space: pre-wrap; }
+  .cartao small { color: #666; display: block; margin-bottom: 6px; }
+  .cartao select { margin: 0 0 6px; padding: 4px; }
+  .modal { display: none; position: fixed; inset: 0; background: #0007; align-items: center; justify-content: center; padding: 10px; }
+  .modal .caixa { background: #fff; padding: 20px; border-radius: 10px; width: 100%; max-width: 420px; max-height: 90vh; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td, th { padding: 6px; border-bottom: 1px solid #ddd; text-align: left; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h2>Entrar</h2>
+  <input id="lLogin" placeholder="Login">
+  <input id="lSenha" type="password" placeholder="Senha">
+  <button onclick="entrar()" style="width:100%">Entrar</button>
+  <p id="lErro" style="color:#c9372c"></p>
+</div>
+
+<div id="app">
+  <header>
+    <h1>Comunicados Internos</h1>
+    <div id="quem"></div>
+    <div>
+      <button id="btAdmin" class="sec" style="display:none" onclick="abrir('mAdmin');carregarUsuarios()">Usuários</button>
+      <button class="sec" onclick="sair()">Sair</button>
+    </div>
+  </header>
+
+  <div class="barra">
+    <button onclick="abrir('mNovo')">+ Novo recado</button>
+    <button class="sec" id="btFiltro" onclick="alternarFiltro()">Só meu setor</button>
+  </div>
+
+  <div class="quadro" id="quadro"></div>
+</div>
+
+<div class="modal" id="mNovo"><div class="caixa">
+  <h3>Novo recado</h3>
+  <input id="nTitulo" placeholder="Título">
+  <textarea id="nTexto" rows="4" placeholder="Escreva o recado ou a tarefa"></textarea>
+  <select id="nSetor"></select>
+  <button onclick="publicar()">Publicar</button>
+  <button class="sec" onclick="fechar('mNovo')">Cancelar</button>
+</div></div>
+
+<div class="modal" id="mAdmin"><div class="caixa">
+  <h3>Usuários (só administrador)</h3>
+  <input id="uNome" placeholder="Nome da pessoa">
+  <input id="uLogin" placeholder="Login">
+  <input id="uSenha" placeholder="Senha">
+  <select id="uSetor"></select>
+  <button onclick="criarUsuario()">Criar usuário</button>
+  <table id="tUsuarios"></table>
+  <br><button class="sec" onclick="fechar('mAdmin')">Fechar</button>
+</div></div>
+
+<script>
+let eu = null, SETORES = [], STATUS = [], soMeu = false;
+const $ = id => document.getElementById(id);
+const abrir = id => $(id).style.display = 'flex';
+const fechar = id => $(id).style.display = 'none';
+
+async function api(url, metodo = 'GET', corpo) {
+  const r = await fetch(url, { method: metodo, headers: { 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.erro || 'Erro');
+  return d;
+}
+
+async function entrar() {
+  try {
+    eu = await api('/api/login', 'POST', { login: $('lLogin').value, senha: $('lSenha').value });
+    iniciar();
+  } catch (e) { $('lErro').textContent = e.message; }
+}
+
+async function sair() { await api('/api/logout', 'POST'); location.reload(); }
+
+async function iniciar() {
+  const s = await api('/api/setores');
+  SETORES = s.setores; STATUS = s.status;
+  $('login').style.display = 'none';
+  $('app').style.display = 'block';
+  $('quem').textContent = eu.nome + ' • setor ' + eu.setor;
+  if (eu.admin) $('btAdmin').style.display = 'inline-block';
+  const opcoes = SETORES.map(x => `<option>${x}</option>`).join('');
+  $('nSetor').innerHTML = opcoes; $('uSetor').innerHTML = opcoes;
+  desenhar();
+  setInterval(desenhar, 15000);
+}
+
+function alternarFiltro() {
+  soMeu = !soMeu;
+  $('btFiltro').textContent = soMeu ? 'Ver todos os setores' : 'Só meu setor';
+  desenhar();
+}
+
+async function desenhar() {
+  const recados = await api('/api/recados');
+  const mostrar = soMeu ? [eu.setor] : SETORES;
+  $('quadro').innerHTML = mostrar.map(setor => {
+    const cartoes = recados.filter(r => r.setor === setor);
+    return `<div class="coluna ${setor === eu.setor ? 'meu' : ''}">
+      <h2><span>${setor}${setor === eu.setor ? ' (meu setor)' : ''}</span><span>${cartoes.length}</span></h2>
+      ${cartoes.map(cartao).join('') || '<small>Sem recados</small>'}
+    </div>`;
+  }).join('');
+}
+
+function cartao(r) {
+  const pode = r.autor_id === eu.id || eu.admin;
+  const classe = r.status === 'Em andamento' ? 'Em' : r.status;
+  return `<div class="cartao ${classe}">
+    <h3>${esc(r.titulo)}</h3>
+    <p>${esc(r.texto)}</p>
+    <small>${esc(r.autor_nome)} (${esc(r.autor_setor)}) • ${r.criado_em}</small>
+    <select onchange="mudarStatus(${r.id}, this.value)">
+      ${STATUS.map(s => `<option ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}
+    </select>
+    ${pode ? `<button class="red" onclick="apagar(${r.id})">Apagar</button>` : ''}
+  </div>`;
+}
+
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function publicar() {
+  try {
+    await api('/api/recados', 'POST', { titulo: $('nTitulo').value, texto: $('nTexto').value, setor: $('nSetor').value });
+    $('nTitulo').value = ''; $('nTexto').value = '';
+    fechar('mNovo'); desenhar();
+  } catch (e) { alert(e.message); }
+}
+
+async function mudarStatus(id, status) { await api(`/api/recados/${id}/status`, 'PATCH', { status }); desenhar(); }
+async function apagar(id) { if (confirm('Apagar este recado?')) { await api(`/api/recados/${id}`, 'DELETE'); desenhar(); } }
+
+async function carregarUsuarios() {
+  const us = await api('/api/usuarios');
+  $('tUsuarios').innerHTML = '<tr><th>Nome</th><th>Login</th><th>Setor</th><th></th></tr>' + us.map(u => `
+    <tr><td>${esc(u.nome)}</td><td>${esc(u.login)}</td><td>${esc(u.setor)}</td>
+    <td><button class="sec" onclick="trocarSenha(${u.id})">Senha</button>
+    ${u.id !== eu.id ? `<button class="red" onclick="removerUsuario(${u.id})">X</button>` : ''}</td></tr>`).join('');
+}
+
+async function criarUsuario() {
+  try {
+    await api('/api/usuarios', 'POST', { nome: $('uNome').value, login: $('uLogin').value, senha: $('uSenha').value, setor: $('uSetor').value });
+    $('uNome').value = ''; $('uLogin').value = ''; $('uSenha').value = '';
+    carregarUsuarios();
+  } catch (e) { alert(e.message); }
+}
+
+async function trocarSenha(id) {
+  const s = prompt('Nova senha:');
+  if (s) { await api(`/api/usuarios/${id}/senha`, 'PATCH', { senha: s }); alert('Senha alterada'); }
+}
+
+async function removerUsuario(id) {
+  if (confirm('Remover este usuário?')) { await api(`/api/usuarios/${id}`, 'DELETE'); carregarUsuarios(); }
+}
+
+api('/api/eu').then(u => { eu = u; iniciar(); }).catch(() => {});
+</script>
+</body>
+</html>
